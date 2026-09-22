@@ -146,7 +146,7 @@ async function processPending() {
     .eq('status', 'pending');
 
   if (error) { warn('Erro listando pendentes:', error.message); return; }
-  log(`Pendentes: ${data.length}`);
+  if (data.length > 0) log(`Pendentes: ${data.length}`);
 
   for (const req of data) {
     await handleRequest(req);
