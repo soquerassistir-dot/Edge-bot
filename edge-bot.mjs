@@ -24,7 +24,7 @@ const FRIEND_TABLE   = 'friend_requests';
 const MESSAGE_TABLE  = 'direct_messages';   // 👈 troque se sua tabela de DMs tiver outro nome
 const MSG_COL_SENDER = 'sender_id';
 const MSG_COL_RECV   = 'receiver_id';
-const MSG_COL_BODY   = 'content';
+const MSG_COL_BODY   = 'text';
 /* ============================================================ */
 
 const WELCOME_MESSAGE =
@@ -56,8 +56,8 @@ const warn = (...a) => console.warn('[Edge]', new Date().toISOString(), ...a);
    ============================================================ */
 async function login() {
   const { data, error } = await sb.auth.signInWithPassword({
-    email: victoraraujo6432@gmail.com,
-    password: joaozinho2012
+    email: BOT_EMAIL,
+    password: BOT_PASSWORD
   });
   if (error) throw new Error('Login falhou: ' + error.message);
 
