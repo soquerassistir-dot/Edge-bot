@@ -1,15 +1,15 @@
 /* ============================================================
-   HTMLBlox — Bot "Edge"
+   HTMLBlox — Bot "Bloxel"
    Sobe um servidor HTTP (para o Render não dormir + Uptime Robot
-   pingar /health) e em paralelo escuta friend requests em tempo
-   real para aceitar + mandar mensagem de boas-vindas.
+   pingar /health) e em paralelo aceita friend requests e manda
+   mensagem de boas-vindas automaticamente.
    ============================================================ */
 
 import http from 'node:http';
 import { createClient } from '@supabase/supabase-js';
 
 /* ============================================================
-   ⚙️  CONFIGURAÇÃO — tudo vem de variáveis de ambiente do Render
+   ⚙️  CONFIGURAÇÃO — vem das variáveis de ambiente do Render
    ============================================================ */
 const SUPABASE_URL  = process.env.SUPABASE_URL;
 const SUPABASE_ANON = process.env.SUPABASE_ANON;
@@ -17,27 +17,28 @@ const BOT_EMAIL     = process.env.BOT_EMAIL;
 const BOT_PASSWORD  = process.env.BOT_PASSWORD;
 
 /* ============================================================
-   ⚙️  NOMES DAS TABELAS/COLUNAS
-   Ajuste aqui se o seu schema for diferente.
+   ⚙️  NOMES DAS TABELAS/COLUNAS (ajustados pro seu schema)
    ============================================================ */
 const FRIEND_TABLE   = 'friend_requests';
-const MESSAGE_TABLE  = 'direct_messages';   // 👈 troque se sua tabela de DMs tiver outro nome
+const MESSAGE_TABLE  = 'direct_messages';
 const MSG_COL_SENDER = 'sender_id';
 const MSG_COL_RECV   = 'receiver_id';
-const MSG_COL_BODY   = 'text';
+const MSG_COL_BODY   = 'text';   // 👈 sua coluna de texto se chama "text"
 /* ============================================================ */
 
+const BOT_DISPLAY_NAME = 'Bloxel';
+
 const WELCOME_MESSAGE =
-  "Hello, I'm Edge, an official HTMLBlox bot used to test all new updates. " +
+  "Hello, I'm Bloxel, an official HTMLBlox bot used to test all new updates. " +
   'Say "hi" if you received this message! Thanks for your attention!';
 
 const PORT = process.env.PORT || 10000;
 
 /* ============================================================
-   VALIDAÇÃO
+   VALIDAÇÃO DAS VARIÁVEIS
    ============================================================ */
 if (!SUPABASE_URL || !SUPABASE_ANON || !BOT_EMAIL || !BOT_PASSWORD) {
-  console.error('[Edge] FATAL: faltam variáveis de ambiente. Veja o Render → Environment.');
+  console.error('[Bloxel] FATAL: faltam variáveis de ambiente. Veja o Render → Environment.');
   process.exit(1);
 }
 
@@ -48,8 +49,8 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON, {
 let BOT_ID = null;
 let BOT_USERNAME = null;
 
-const log  = (...a) => console.log('[Edge]', new Date().toISOString(), ...a);
-const warn = (...a) => console.warn('[Edge]', new Date().toISOString(), ...a);
+const log  = (...a) => console.log('[Bloxel]', new Date().toISOString(), ...a);
+const warn = (...a) => console.warn('[Bloxel]', new Date().toISOString(), ...a);
 
 /* ============================================================
    LOGIN
@@ -69,7 +70,7 @@ async function login() {
     .eq('id', BOT_ID)
     .maybeSingle();
 
-  BOT_USERNAME = prof?.username || 'Edge';
+  BOT_USERNAME = prof?.username || BOT_DISPLAY_NAME;
   log(`Logado como ${BOT_USERNAME} (${BOT_ID})`);
 }
 
@@ -88,7 +89,7 @@ async function acceptFriendRequest(req) {
   warn('RPC falhou, tentando UPDATE direto:', rpcErr.message);
   const { error: upErr } = await sb
     .from(FRIEND_TABLE)
-    .update({ status: 'accepted' })
+    .update({ status: 'accepted', updated_at: new Date().toISOString() })
     .eq('id', req.id)
     .eq('receiver_id', BOT_ID);
 
@@ -146,7 +147,7 @@ async function processPending() {
     .eq('status', 'pending');
 
   if (error) { warn('Erro listando pendentes:', error.message); return; }
-  if (data.length > 0) log(`Pendentes: ${data.length}`);
+  if (data.length > 0) log(`📋 ${data.length} pendente(s)`);
 
   for (const req of data) {
     await handleRequest(req);
@@ -158,7 +159,7 @@ async function processPending() {
    REALTIME — escuta novos pedidos
    ============================================================ */
 function listenRealtime() {
-  sb.channel('edge-bot-friend-requests')
+  sb.channel('bloxel-friend-requests')
     .on(
       'postgres_changes',
       {
@@ -194,9 +195,10 @@ function listenRealtime() {
 }
 
 /* ============================================================
-   HEARTBEAT — mantém sessão viva
+   HEARTBEAT + POLLING DE SEGURANÇA
    ============================================================ */
 function heartbeat() {
+  // Relogin automático se a sessão expirar (a cada 5 min)
   setInterval(async () => {
     const { data } = await sb.auth.getSession();
     if (!data?.session) {
@@ -204,18 +206,22 @@ function heartbeat() {
       try { await login(); } catch (e) { warn(e); }
     }
   }, 5 * 60 * 1000);
+
+  // Polling de segurança — funciona mesmo se o Realtime cair (a cada 15s)
+  setInterval(() => {
+    processPending().catch(e => warn('Polling error:', e.message));
+  }, 15 * 1000);
 }
 
 /* ============================================================
-   SERVIDOR HTTP — só pra o Render não dormir + Uptime Robot pingar
+   SERVIDOR HTTP — pra o Render não dormir + Uptime Robot pingar
    ============================================================ */
 const server = http.createServer((req, res) => {
-  // /health é o endpoint que o Uptime Robot vai pingar
   if (req.url === '/' || req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       status: 'ok',
-      bot: BOT_USERNAME || 'Edge',
+      bot: BOT_USERNAME || BOT_DISPLAY_NAME,
       botId: BOT_ID,
       uptime: Math.floor(process.uptime()) + 's'
     }));
@@ -242,9 +248,9 @@ const server = http.createServer((req, res) => {
     process.on('SIGINT',  () => { log('SIGINT'); process.exit(0); });
     process.on('SIGTERM', () => { log('SIGTERM'); process.exit(0); });
 
-    log('✅ Edge está online.');
+    log('✅ Bloxel está online.');
   } catch (e) {
-    console.error('[Edge] FATAL:', e);
+    console.error('[Bloxel] FATAL:', e);
     process.exit(1);
   }
 })();
